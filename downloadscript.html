@@ -84,7 +84,7 @@ $.getJSON( "openpaths_cyburgee.json", function( data ) {
                       lon: panoData.location.latLng.lng(),
                       width: depthMap.width,
                       height: depthMap.height,
-                      //numPlanes: depthMap.depthMap.planes.length,
+                      numPlanes: depthMap.depthMap.planes.length,
                       depthMap: depthMap.depthMap
                     }
                     console.log(mapObj);
@@ -163,30 +163,23 @@ $.getJSON( "openpaths_cyburgee.json", function( data ) {
               n[1] = depthMap.getFloat32(byteOffset + 4, true);
               n[2] = depthMap.getFloat32(byteOffset + 8, true);
               d    = depthMap.getFloat32(byteOffset + 12, true);
-              /*
-              planes[i] =  {
+              
+              planes.push({
                   x: n[0],
                   y: n[1],
                   z: n[2],
                   d: d
-                };*/
-                //console.log(n);
-                //console.log(n.slice(0));
-              planes.push({
-                  n: n.slice(0),
-                  d: d
-              });
+                });
           }
 
-          return { planes: planes, indices: indices };
-          /*return { 
+          return { 
             width: header.width, 
             height: header.height,
             depthMap: {
               planes: planes, 
               indices: indices
             } 
-          };*/
+          };
       }
 
       this.computeDepthMap = function(header, indices, planes) {
@@ -203,7 +196,6 @@ $.getJSON( "openpaths_cyburgee.json", function( data ) {
           for(y=0; y<h; ++y) {
               for(x=0; x<w; ++x) {
                   planeIdx = indices[y*w + x];
-
                   phi = (w - x - 1) / (w - 1) * 2 * Math.PI + Math.PI/2;
                   theta = (h/2 - y - 1) / (h/2- 1) * Math.PI;
 
@@ -244,11 +236,11 @@ $.getJSON( "openpaths_cyburgee.json", function( data ) {
           depthMapData = new DataView(depthMap.buffer);
           header = self.parseHeader(depthMapData);
           data = self.parsePlanes(header, depthMapData);
-          //console.log(data);
-          //return data;
-          depthMap = self.computeDepthMap(header, data.indices, data.planes);
+          console.log(data);
+          return data;
+          //depthMap = self.computeDepthMap(header, data.indices, data.planes);
 
-          return depthMap;
+          //return depthMap;
       }
 
       this.createEmptyDepthMap = function() {
