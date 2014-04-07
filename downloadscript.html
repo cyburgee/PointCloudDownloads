@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Street View service</title>
+    <style>
+      html, body, #map-canvas {
+        height: 100%;
+        margin: 0px;
+        padding: 0px
+      }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDecRrWH6I54dShKlK5uvq4UI4iFXnz5bw&v=3.exp&sensor=false"></script>
+    <script src="jquery-2.0.2.min.js"></script>
+    <script src="jquery-base64-master/jquery.base64.min.js"></script>
+    <script src="zpipe-master/dist/zpipe.min.js"></script>
+    <script src="FileSaver.js-master/FileSaver.js"></script>
+    <script>
+$.getJSON( "openpaths_cyburgee.json", function( data ) {
+  //console.log(data);
+  //var items = [];
+  //$.each( data, function( key, val ) {
+    //items.push( "<li id='" + key + "'>" + val + "</li>" );
+    //var lat = data[key].lat;
+    //var lon = data[key].lon;
+
+  var Maps = {};
+
+  function initialize(lat,lon,key,val){
+    //var mapObj = {depthMap: "empty"};
+    var place = new google.maps.LatLng(lat, lon);
+    var webService = new google.maps.StreetViewService();  
+    /**Check in a perimeter of 100 meters**/ 
+    var checkaround = 100;
+    /** checkNearestStreetView is a valid callback function **/
+
+    webService.getPanoramaByLocation(place,checkaround ,checkNearestStreetView);
+
+    //var map = new google.maps.Map(
+    //    document.getElementById('map-canvas'));
+    function checkNearestStreetView(panoData){
+        if(panoData){
+          //console.log(panoData);
+             if(panoData.location){
+              //console.log(panoData.location);
+                if(panoData.location.latLng){
+                  /**Well done you can use a nearest existing street view coordinates**/
+                  //console.log({key:key, data:panoData.location.latLng.lat()});
+                  //console.log({key:key, data:panoData.location.latLng.lng()});
+                  /*
+                  var mapOptions = {
+                    center: panoData.location.latLng,
+                    zoom: 14
+                  };
+                  var map = new google.maps.Map(
+                      document.getElementById('map-canvas'), mapOptions);
+                  var panoramaOptions = {
+                    position: panoData.location.latLng
+                  };
+                  var panorama = new  google.maps.StreetViewPanorama(document.getElementById('pano'),panoramaOptions);
+                  map.setStreetView(panorama);
+                  */
+                  var panoId = panoData.location.pano;
+                  var urlReq = "http://maps.google.com/cbk?output=json&cb_client=maps_sv&v=4&dm=1&hl=en&panoid=" + panoId;
+                  console.log(urlReq);
+                  var request = $.ajax({
+                    url: urlReq,
+                    dataType: "jsonp",
+                  })
+                  .done(function(data, textStatus, xhr) {
+                  var decoded, depthMap;
+                    try {
+                        decoded = self.decode(data.model.depth_map);
+                        depthMap = self.parse(decoded);
+                    } catch(e) {
+                        console.error("Error loading depth map for pano " + panoId + "\n" + e.message + "\nAt " + e.filename + "(" + e.lineNumber + ")");
+                        Maps[key] = {depthMap: "empty"};
+                        //depthMap = self.createEmptyDepthMap();
+                    }
+                    //console.log({key:key, data:depthMap});
+                    var mapObj = {
+                      panoId: panoId,
+                      lat: panoData.location.latLng.lat(),
+                      lon: panoData.location.latLng.lng(),
+                      width: depthMap.width,
+                      height: depthMap.height,
+                      //numPlanes: depthMap.depthMap.planes.length,
+                      depthMap: depthMap.depthMap
+                    }
+                    console.log(mapObj);
+                    Maps[key] = mapObj;
+                  })
+                  .fail(function(xhr, textStatus, errorThrown) {
+                      console.error("Request failed: " + url + "\n" + textStatus + "\n" + errorThrown);
+                      Maps[key] = {depthMap: "empty"};
+                      //var depthMap = self.createEmptyDepthMap();
+                      /*if(self.onDepthLoad) {
+                          self.depthMap = depthMap;
+                          self.onDepthLoad();
+                      }*/
+                  });
+                }
+              }
+            }
+          else{
+            console.log(key + ", couldn't find streetview");
+            Maps[key] = {depthMap: "empty"};
+          }
+      //Maps[key] = mapObj;
+    }
+
+    this.decode = function(rawDepthMap) {
+          var self = this,
+                     i,
+                     compressedDepthMapData,
+                     depthMap,
+                     decompressedDepthMap;
+
+          // Append '=' in order to make the length of the array a multiple of 4
+          while(rawDepthMap.length %4 != 0)
+              rawDepthMap += '=';
+
+          // Replace '-' by '+' and '_' by '/'
+          rawDepthMap = rawDepthMap.replace(/-/g,'+');
+          rawDepthMap = rawDepthMap.replace(/_/g,'/');
+
+          // Decode and decompress data
+          compressedDepthMapData = $.base64.decode(rawDepthMap);
+          decompressedDepthMap = zpipe.inflate(compressedDepthMapData);
+
+          // Convert output of decompressor to Uint8Array
+          depthMap = new Uint8Array(decompressedDepthMap.length);
+          for(i=0; i<decompressedDepthMap.length; ++i)
+              depthMap[i] = decompressedDepthMap.charCodeAt(i);
+          return depthMap;
+      }
+
+      this.parseHeader = function(depthMap) {
+          return {
+              headerSize : depthMap.getUint8(0),
+              numberOfPlanes : depthMap.getUint16(1, true),
+              width: depthMap.getUint16(3, true),
+              height: depthMap.getUint16(5, true),
+              offset: depthMap.getUint16(7, true)
+          };
+      }
+      
+      this.parsePlanes = function(header, depthMap) {
+          var planes = [],
+              indices = [],
+              i,
+              n = [0, 0, 0],
+              d,
+              byteOffset;
+
+          for(i=0; i<header.width*header.height; ++i) {
+              indices.push(depthMap.getUint8(header.offset + i));
+          }
+
+          for(i=0; i<header.numberOfPlanes; ++i) {
+              byteOffset = header.offset + header.width*header.height + i*4*4;
+              n[0] = depthMap.getFloat32(byteOffset, true);
+              n[1] = depthMap.getFloat32(byteOffset + 4, true);
+              n[2] = depthMap.getFloat32(byteOffset + 8, true);
+              d    = depthMap.getFloat32(byteOffset + 12, true);
+              /*
+              planes[i] =  {
+                  x: n[0],
+                  y: n[1],
+                  z: n[2],
+                  d: d
+                };*/
+                //console.log(n);
+                //console.log(n.slice(0));
+              planes.push({
+                  n: n.slice(0),
+                  d: d
+              });
+          }
+
+          return { planes: planes, indices: indices };
+          /*return { 
+            width: header.width, 
+            height: header.height,
+            depthMap: {
+              planes: planes, 
+              indices: indices
+            } 
+          };*/
+      }
+
+      this.computeDepthMap = function(header, indices, planes) {
+          var depthMap = null,
+              x, y,
+              planeIdx,
+              phi, theta,
+              v = [0, 0, 0],
+              w = header.width, h = header.height,
+              plane, t, p;
+
+          depthMap = new Float32Array(w*h);
+
+          for(y=0; y<h; ++y) {
+              for(x=0; x<w; ++x) {
+                  planeIdx = indices[y*w + x];
+
+                  phi = (w - x - 1) / (w - 1) * 2 * Math.PI + Math.PI/2;
+                  theta = (h/2 - y - 1) / (h/2- 1) * Math.PI;
+
+                  v[0] = Math.sin(theta) * Math.cos(phi);
+                  v[1] = Math.sin(theta) * Math.sin(phi);
+                  v[2] = Math.cos(theta);
+
+                  if(planeIdx > 0) {
+                      plane = planes[planeIdx];
+
+                      t = plane.d / (v[0]*plane.n[0] + v[1]*plane.n[1] + v[2]*plane.n[2]);
+                      if (y >= h/2)
+                        t*= -1;
+                      v[0] *= t;
+                      v[1] *= t;
+                      v[2] *= t;
+                      depthMap[y*w + (w-x-1)] = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+                  } else {
+                      depthMap[y*w + (w-x-1)] = 0;//9999999999999999999.;
+                  }
+              }
+          }
+
+          return {
+              width: w,
+              height: h,
+              depthMap: depthMap
+          };
+      }
+
+      this.parse = function(depthMap) {
+          var self = this,
+              depthMapData,
+              header,
+              data,
+              depthMap;
+
+          depthMapData = new DataView(depthMap.buffer);
+          header = self.parseHeader(depthMapData);
+          data = self.parsePlanes(header, depthMapData);
+          //console.log(data);
+          //return data;
+          depthMap = self.computeDepthMap(header, data.indices, data.planes);
+
+          return depthMap;
+      }
+
+      this.createEmptyDepthMap = function() {
+          var depthMap = {
+              width: 512,
+              height: 256,
+              depthMap: new Float32Array(512*256)
+          };
+          for(var i=0; i<512*256; ++i)
+              depthMap.depthMap[i] = 9999999999999999999.;
+          return depthMap;
+      }
+    //Maps[key] = mapObj;
+  }
+
+  //var counter = 0;
+  $.each( data, function( key, val ) {
+    var lat = data[key].lat;
+    var lon = data[key].lon;
+    //console.log(lat);
+    //console.log(lon); 
+    //console.log(key);
+    if(key >= 0&& key <1)
+      initialize(lat,lon,key,val);//setTimeout(function(){initialize(lat,lon,key,val)},500);
+    //counter++;
+  });
+
+  var checkExist = setInterval(function() {
+     if (Maps.hasOwnProperty(0)) {
+        window.clearInterval(checkExist);
+        var json = JSON.stringify(Maps);
+        //console.log(json);
+        var blob = new Blob([json], {type: "application/json"});
+        saveAs(blob,"saveTest.json");
+     }
+  }, 1000);
+
+});
+    </script>
+  </head>
+  <body>
+    <div id="map-canvas" style="width: 400px; height: 300px"></div>
+    <div id="pano" style="position:absolute; left:410px; top: 8px; width: 400px; height: 300px;"></div>
+  </body>
+</html>
